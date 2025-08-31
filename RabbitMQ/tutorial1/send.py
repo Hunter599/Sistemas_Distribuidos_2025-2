@@ -6,7 +6,7 @@ channel = connection.channel()
 
 channel.queue_declare(queue='myQueue')
 
-channel.basic_publish(exchange='', routing_key='myQueue', body='Hello! ')
+channel.basic_publish(exchange='direct_logs' ,routing_key='myQueue', body='Hello! ')
 
 print("[x] Sent 'Hello!' ")
 
