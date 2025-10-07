@@ -171,6 +171,7 @@ class Peer:
         self.release_cs()
 
     def receive_request(self, peer_name, timestamp):
+        self.heartbeat(peer_name)
         self.bump_clock(remote_ts=timestamp)
         self.log(f"Recebeu REQUEST de {peer_name} (ts={timestamp})", level="request")
 
@@ -213,6 +214,7 @@ class Peer:
         return True
 
     def receive_reply(self, peer_name):
+        self.heartbeat(peer_name)
         self.bump_clock()
         self.log(f"Recebeu REPLY de {peer_name}", level="reply")
         with self.active_lock:
@@ -220,6 +222,7 @@ class Peer:
         return True
     
     def receive_in_cs_notification(self, holder_name):
+        self.heartbeat(holder_name)
         self.log(f"Acesso negado. {holder_name} está atualmente na Seção Crítica.", level="error")
         return True
 
@@ -240,8 +243,11 @@ class Peer:
                         with Pyro5.api.Proxy(uri) as proxy:
                             proxy.heartbeat(self.name)
                         # self.log(f"Enviou heartbeat para {peer_name}", level="hb")
-                    except:
-                        pass
+                    except Exception as e:
+                        # If communication fails, log it and remove the peer immediately. (Discovering and removing peer cycle problem)
+                        self.log(f"Falha de comunicação com {peer_name}, removendo-o. Erro: {e}", level="error")
+                        self.active_peers.pop(peer_name, None)
+                        self.last_heartbeat.pop(peer_name, None)
 
     def heartbeat(self, from_peer):
         self.last_heartbeat[from_peer] = time.time()
