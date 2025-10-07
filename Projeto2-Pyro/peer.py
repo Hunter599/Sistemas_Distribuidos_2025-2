@@ -113,7 +113,18 @@ class Peer:
                 try:
                     with Pyro5.api.Proxy(uri) as proxy:
                         proxy._pyroTimeout = self.reply_timeout
-                        proxy.receive_request(self.name, self.request_timestamp)
+                        
+                        if (proxy.receive_request(self.name, self.request_timestamp)):
+                            uri = self.active_peers.get(peer_name)
+                            if uri:
+                                try:
+                                    with Pyro5.api.Proxy(uri) as proxy:
+                                        proxy._pyroOneway.add("receive_in_cs_notification")
+                                        proxy.receive_in_cs_notification(self.name)
+                                except Exception as e:
+                                    self.log(f"Falha ao notificar {peer_name}: {e}", level="error")
+
+
                 except Exception as e:
                     self.log(f"Falha ao enviar REQUEST para {peer_name}: {e}", level="error")
 
@@ -186,16 +197,9 @@ class Peer:
         if must_defer:
             self.log(f"Adiar REPLY para {peer_name}", level="error")
             self.deferred_replies.append(peer_name)
+            return False
 
-            if self.in_cs:
-                uri = self.active_peers.get(peer_name)
-                if uri:
-                    try:
-                        with Pyro5.api.Proxy(uri) as proxy:
-                            proxy._pyroOneway.add("receive_in_cs_notification")
-                            proxy.receive_in_cs_notification(self.name)
-                    except Exception as e:
-                        self.log(f"Falha ao notificar {peer_name}: {e}", level="error")
+                
 
         else:
             last_hb = self.last_heartbeat.get(peer_name, 0)
@@ -268,9 +272,18 @@ class Peer:
         self.threads.append(t)
 
     def shutdown(self):
+
+        ns = Pyro5.api.local_ns()
+        ns.remove(self.name)
+
         self._stop = True
         if self.cs_timer:
             self.cs_timer.cancel()
+        
+        daemon = self.daemon
+        daemon.shutdown()
+        
+
         self.log("Desligando peer.", level="error")
         return True
 
