@@ -16,7 +16,6 @@ CYAN = "\033[96m"
 @Pyro5.api.expose
 @Pyro5.api.behavior(instance_mode="single")
 class Peer:
-    # <<< CHANGE: Removed verbose parameter and corrected reply_timeout >>>
     def __init__(self, name, access_time_limit=10.0, heartbeat_interval=1.0, heartbeat_timeout=3.0, reply_timeout=25.0):
         self.name = name
         self.clock = 0
@@ -47,7 +46,6 @@ class Peer:
     # Logger colorido
     # ----------------------
     def log(self, msg, level="info"):
-        # <<< CHANGE: Removed verbose logic >>>
         color = RESET
         if level == "request":
             color = BLUE
@@ -241,14 +239,12 @@ class Peer:
                     try:
                         with Pyro5.api.Proxy(uri) as proxy:
                             proxy.heartbeat(self.name)
-                        # <<< CHANGE: Heartbeat sending log commented out >>>
                         # self.log(f"Enviou heartbeat para {peer_name}", level="hb")
                     except:
                         pass
 
     def heartbeat(self, from_peer):
         self.last_heartbeat[from_peer] = time.time()
-        # <<< CHANGE: Heartbeat receiving log commented out >>>
         # self.log(f"Heartbeat recebido de {from_peer}", level="hb")
         return True
 
