@@ -113,18 +113,7 @@ class Peer:
                 try:
                     with Pyro5.api.Proxy(uri) as proxy:
                         proxy._pyroTimeout = self.reply_timeout
-                        
-                        if (proxy.receive_request(self.name, self.request_timestamp)):
-                            uri = self.active_peers.get(peer_name)
-                            if uri:
-                                try:
-                                    with Pyro5.api.Proxy(uri) as proxy:
-                                        proxy._pyroOneway.add("receive_in_cs_notification")
-                                        proxy.receive_in_cs_notification(self.name)
-                                except Exception as e:
-                                    self.log(f"Falha ao notificar {peer_name}: {e}", level="error")
-
-
+                        proxy.receive_request(self.name, self.request_timestamp)
                 except Exception as e:
                     self.log(f"Falha ao enviar REQUEST para {peer_name}: {e}", level="error")
 
@@ -197,9 +186,16 @@ class Peer:
         if must_defer:
             self.log(f"Adiar REPLY para {peer_name}", level="error")
             self.deferred_replies.append(peer_name)
-            return False
-
-                
+            
+            if self.in_cs:
+                uri = self.active_peers.get(peer_name)
+                if uri:
+                    try:
+                        with Pyro5.api.Proxy(uri) as proxy:
+                            proxy._pyroOneway.add("heartbeat")
+                            proxy.heartbeat(self.name, is_busy=True)
+                    except Exception as e:
+                        self.log(f"Falha ao notificar {peer_name}: {e}", level="error")
 
         else:
             last_hb = self.last_heartbeat.get(peer_name, 0)
@@ -215,7 +211,8 @@ class Peer:
                         self.log(f"Enviou REPLY imediato para {peer_name}", level="reply")
                 except Exception as e:
                     self.log(f"Falha enviando REPLY para {peer_name}: {e}", level="error")
-        return True
+        
+        return True 
 
     def receive_reply(self, peer_name):
         self.heartbeat(peer_name)
@@ -224,38 +221,43 @@ class Peer:
         with self.active_lock:
             self.replies_received.add(peer_name)
         return True
-    
-    def receive_in_cs_notification(self, holder_name):
-        self.heartbeat(holder_name)
-        self.log(f"Acesso negado. {holder_name} está atualmente na Seção Crítica.", level="error")
-        return True
 
     # ----------------------
     # Heartbeat
     # ----------------------
     def send_heartbeat(self):
         now = time.time()
+        
+        with self.cs_lock:
+            is_requesting = self.requesting
+
         with self.active_lock:
             for peer_name, uri in list(self.active_peers.items()):
                 last = self.last_heartbeat.get(peer_name, 0)
+
                 if now - last > self.hb_timeout:
-                    self.log(f"Peer {peer_name} não responde há {self.hb_timeout}s. Removendo da lista.", level="error")
-                    self.active_peers.pop(peer_name, None)
-                    self.last_heartbeat.pop(peer_name, None)
-                else:
-                    try:
-                        with Pyro5.api.Proxy(uri) as proxy:
-                            proxy.heartbeat(self.name)
-                        # self.log(f"Enviou heartbeat para {peer_name}", level="hb")
-                    except Exception as e:
-                        # If communication fails, log it and remove the peer immediately. (Discovering and removing peer cycle problem)
-                        self.log(f"Falha de comunicação com {peer_name}, removendo-o. Erro: {e}", level="error")
+                    
+                    if not is_requesting:
+                        self.log(f"Peer {peer_name} não responde há {self.hb_timeout}s. Removendo da lista.", level="error")
                         self.active_peers.pop(peer_name, None)
                         self.last_heartbeat.pop(peer_name, None)
+    
+                    continue
+                
+                try:
+                    with Pyro5.api.Proxy(uri) as proxy:
+                        proxy.heartbeat(self.name)
+                except Exception as e:
+                    self.log(f"Falha de comunicação com {peer_name}, removendo-o. Erro: {e}", level="error")
+                    self.active_peers.pop(peer_name, None)
+                    self.last_heartbeat.pop(peer_name, None)
 
-    def heartbeat(self, from_peer):
+    def heartbeat(self, from_peer, is_busy=False):
         self.last_heartbeat[from_peer] = time.time()
-        # self.log(f"Heartbeat recebido de {from_peer}", level="hb")
+        
+        if is_busy:
+            self.log(f"Acesso negado. {from_peer} está atualmente na Seção Crítica.", level="error")
+            
         return True
 
     # ----------------------
@@ -272,19 +274,27 @@ class Peer:
         self.threads.append(t)
 
     def shutdown(self):
+        self.log("Shutdown requested.", level="error")
 
-        ns = Pyro5.api.local_ns()
-        ns.remove(self.name)
+        try:
+            ns = Pyro5.api.locate_ns()
+            ns.remove(self.name)
+            self.log("Successfully removed from the Name Server.", level="error")
+        except Exception as e:
+            self.log(f"Failed to remove from Name Server during shutdown: {e}", level="error")
 
         self._stop = True
         if self.cs_timer:
             self.cs_timer.cancel()
-        
-        daemon = self.daemon
-        daemon.shutdown()
-        
 
-        self.log("Desligando peer.", level="error")
+        def do_shutdown():
+            time.sleep(0.1)
+            self._pyroDaemon.shutdown()
+
+        t = threading.Thread(target=do_shutdown)
+        t.daemon = False
+        t.start()
+        
         return True
 
     def list_active_peers(self):

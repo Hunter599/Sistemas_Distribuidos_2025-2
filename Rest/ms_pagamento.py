@@ -52,7 +52,7 @@ def consume_auction_winners():
                 "transactionId": transactionId,
                 "userId": userId,
                 "value": value,
-                "webhook_url": "http://localhost:5003/pagamento/webhook"
+                "webhookUrl": "http://localhost:5003/pagamento/webhook"
             }
 
             print(f"[MS Pagamento] Cirando link de pagamento para {transactionId}")
