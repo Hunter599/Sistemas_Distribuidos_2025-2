@@ -1,3 +1,5 @@
+# ms_lance.py (Corrected)
+
 import json
 import pika
 import os
@@ -21,7 +23,8 @@ def consume_auction_events():
 
     resultStarted = consumerChannel.queue_declare(queue='', exclusive=True)
     queueStarted_Name = resultStarted.method.queue
-    consumerChannel.queue_bind(exchange='auction_exchange', queue=queueStarted_Name, routing_key='leilao_finalizado')
+    # FIX: Changed binding to 'leilao_iniciado'
+    consumerChannel.queue_bind(exchange='auction_exchange', queue=queueStarted_Name, routing_key='leilao_iniciado')
 
     resultEnded = consumerChannel.queue_declare(queue='', exclusive=True)
     queueEnded_Name = resultEnded.method.queue
@@ -39,7 +42,7 @@ def consume_auction_events():
 
     def auction_ended_callback(ch, method, properties, body):
         message = json.loads(body)
-        auctionId = message["id"]
+        auctionId = message["id"] # 'id' is fine, it's consistent
 
         with auctionLock:
             if (auctionId in activeAuctions):
@@ -49,17 +52,17 @@ def consume_auction_events():
         
         if (winnerInfo):
             winnerId, bidValue = winnerInfo
+            # FIX: Standardized keys to snake_case for publishing
             winnerData = {
-                "auctionId": auctionId,
-                "winnerId": winnerId,
-                "bidValue": bidValue
+                "auction_id": auctionId,
+                "winner_id": winnerId,
+                "bid_value": bidValue
             }
 
             channel.basic_publish(exchange='auction_exchange', routing_key='leilao_vencedor', body=json.dumps(winnerData))
             print(f"[MS Lance] Leilao {auctionId} finalizado. Vencedor: {winnerId}")
         
         else:
-
             print(f"[MS Lance] Leilao {auctionId} finalizado. Sem lances")
         
     consumerChannel.basic_consume(queue=queueStarted_Name, on_message_callback=auction_started_callback, auto_ack=True)
@@ -71,27 +74,28 @@ def consume_auction_events():
 @app.route("/lances", methods=['POST'])
 def place_bid():
     data = request.get_json()
-    auctionId = data["auctionId"]
-    userId = data["userId"]
-    bidValue = data["bidValue"]
+    # FIX: Standardized keys to snake_case to read from gateway
+    auctionId = data["auction_id"]
+    userId = data["user_id"]
+    bidValue = data["bid_value"]
 
+    # FIX: Standardized event message keys
     eventMessage = {
-        "auctionId": auctionId,
-        "userId": userId,
-        "bidValue": bidValue
+        "auction_id": auctionId,
+        "user_id": userId,
+        "bid_value": bidValue
     }
 
     with auctionLock:
-
         if (auctionId not in activeAuctions):
             print(f"[MS Lance] Lance rejeitado (leilao {auctionId}) nao ativo")
-            channel.basic_publish(exchange='auction_exchange', routing_key="lance_invalido", body=json.dumps(eventMessage))
+            channel.basic_publish(exchange='auction_exchange', routing_key="lance_invalidado", body=json.dumps(eventMessage))
             return jsonify({"status": "rejected", "reason": "Auction not active"}), 400
         
         lastBidValue = bids.get(auctionId, (None, 0))[1]
         if (bidValue <= lastBidValue):
             print(f"[MS Lance] Lance rejeitado (valor {bidValue}) inferior ou igual a {lastBidValue}")
-            channel.basic_publish(exchange='auction_exchange', routing_key="lance_invalido", body=json.dumps(eventMessage))
+            channel.basic_publish(exchange='auction_exchange', routing_key="lance_invalidado", body=json.dumps(eventMessage))
             return jsonify({"status": "rejected", "reason": "Bid not higher than leading bid"}), 400
         
         bids[auctionId] = (userId, bidValue)
@@ -101,9 +105,8 @@ def place_bid():
     
 
 if __name__ == '__main__':
-
     consumerThread = threading.Thread(target= consume_auction_events, daemon=True)
     consumerThread.start()
 
-    print("[MS Lance] Servidor Rest iniciado")
+    print("[MS Lance] Servidor Rest iniciado na porta 5002")
     app.run(port=5002, host='0.0.0.0')
