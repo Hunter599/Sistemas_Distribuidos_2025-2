@@ -67,14 +67,14 @@ def consume_auction_winners():
                 "webhook_url": "http://localhost:5003/pagamento/webhook" # Webhook, our "callback URL"
             }   
 
-            print(f"[MS Pagamento] Criando link de pagamento para {transactionId}") # FIX: Typo 'Cirando'
+            print(f"[MS Pagamento] Criando link de pagamento para {transactionId}") 
             
             # Using the 'request.post' to act as a client
             response = requests.post(f"{EXTERNAL_PAYMENT_SYSTEM_URL}/create_payment",json=paymentRequestData) 
             response.raise_for_status()
 
             # Get the immediate response 
-            paymentLink = response.json()['payment_link'] # FIX: key 'payment_link'
+            paymentLink = response.json()['payment_link'] 
 
             # Prepare the notification for our client
             linkMessage = {
@@ -106,7 +106,7 @@ def payment_webhook():
     transactionId = data['transaction_id']
     status = data['status']
 
-    print(f"[MS Pagamento] Webhook recebido. Transacao {transactionId}, foi {status}") # FIX: Typo 'recebidp'
+    print(f"[MS Pagamento] Webhook recebido. Transacao {transactionId}, foi {status}") 
 
     # Retrieves and removes the transactiong from the dictionary
     transactionInfo = pendingTransactions.pop(transactionId, None) # Key is transactionId, that's fine
@@ -134,5 +134,5 @@ if __name__ == '__main__':
     consumerThread = threading.Thread(target=consume_auction_winners, daemon=True)
     consumerThread.start()
 
-    print("[MS Pagamento] Servidor REST/Webhook iniciado na porta 5003") # FIX: Typo
+    print("[MS Pagamento] Servidor REST/Webhook iniciado na porta 5003") 
     app.run(port=5003, host="0.0.0.0", threaded= True) # Webhook in mainthread

@@ -1,5 +1,3 @@
-# ms_lance.py (Corrected)
-
 import json
 import pika
 import os
